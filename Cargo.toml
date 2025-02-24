@@ -1,0 +1,10 @@
+[package]
+name = "resnap-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+image = "0.25.5"
+imageproc = "0.25.0"
+openssh = "0.11.5"
+tokio = { version = "1.43.0", features = ["full"] }
