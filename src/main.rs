@@ -1,3 +1,4 @@
+use chrono::Utc;
 use image::{ImageBuffer, Luma, Rgba, RgbaImage};
 use imageproc::contours;
 use openssh::Session;
@@ -90,12 +91,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let width = 1872;
     let height = 1404;
 
-    // Get byte format from env or use default
-    // let byte_correction =
-    //     env::var("BYTE_CORRECTION").unwrap_or_else(|_| "false".to_string()) == "true";
-    // let color_correction =
-    //     env::var("COLOR_CORRECTION").unwrap_or_else(|_| "false".to_string()) == "true";
-
     let (bytes_per_pixel, pixel_format, transpose) = (2, "gray16", "transpose=2,hflip"); // 90° clockwise and horizontal flip
 
     let window_bytes = width * height * bytes_per_pixel;
@@ -129,7 +124,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     filters.push_str(",curves=all=0.045/0 0.06/1");
 
     // Convert raw framebuffer to image using ffmpeg
-    let output_file = "remarkable_screen.png";
+    let now = Utc::now();
+    let formatted_datetime = format!("{}-remarkable-screen.png", now.format("%m-%d-%Y-%H-%M-%S"));
+    let output_file = &formatted_datetime;
     let status = Command::new("ffmpeg")
         .args([
             "-f",
@@ -277,57 +274,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         println!("⚠️ No significant content found in the image");
     }
-
-    // // Alternative approach using the image crate - reading the exact number of bytes
-    // let direct_output = "remarkable_screen_direct.png";
-    // println!("📷 Creating direct image with image crate...");
-    //
-    // if byte_correction {
-    //     // For 16-bit grayscale, make sure we have complete pixels
-    //     let bytes_needed = width * height * 2;
-    //     if fb_data.stdout.len() >= bytes_needed {
-    //         let img_data = &fb_data.stdout[0..bytes_needed];
-    //         let mut raw_data = Vec::new();
-    //
-    //         // Convert from u8 slice to u16 slice - handle endianness if needed
-    //         for i in (0..img_data.len()).step_by(2) {
-    //             if i + 1 < img_data.len() {
-    //                 // Assuming little-endian format
-    //                 let pixel = u16::from_le_bytes([img_data[i], img_data[i + 1]]);
-    //                 raw_data.push(pixel);
-    //             }
-    //         }
-    //
-    //         let img: ImageBuffer<Luma<u16>, Vec<u16>> = ImageBuffer::from_raw(
-    //             width.try_into().unwrap(),
-    //             height.try_into().unwrap(),
-    //             raw_data,
-    //         )
-    //         .ok_or("Failed to create 16-bit image from framebuffer data")?;
-    //
-    //         img.save(direct_output)?;
-    //         println!("📸 Saved direct 16-bit image to {}", direct_output);
-    //     } else {
-    //         println!("⚠️ Not enough data for direct 16-bit image conversion");
-    //     }
-    // } else {
-    //     // For 8-bit grayscale
-    //     let bytes_needed = width * height;
-    //     if fb_data.stdout.len() >= bytes_needed {
-    //         let img_data = &fb_data.stdout[0..bytes_needed];
-    //         let img: ImageBuffer<Luma<u8>, _> = ImageBuffer::from_raw(
-    //             width.try_into().unwrap(),
-    //             height.try_into().unwrap(),
-    //             img_data.to_vec(),
-    //         )
-    //         .ok_or("Failed to create 8-bit image from framebuffer data")?;
-    //
-    //         img.save(direct_output)?;
-    //         println!("📸 Saved direct 8-bit image to {}", direct_output);
-    //     } else {
-    //         println!("⚠️ Not enough data for direct image conversion");
-    //     }
-    // }
 
     Ok(())
 }
