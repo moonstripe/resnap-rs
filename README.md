@@ -2,6 +2,8 @@
 
 A Rust utility for capturing, processing, and extracting handwritten content from reMarkable tablets.
 
+###### Warning: This utility only works for the Remarkable 2.0 currently
+
 ## Overview
 
 This tool connects to a reMarkable tablet over SSH, captures the current screen contents, processes the image to isolate handwritten content, and saves both the full screen and a cropped version containing only the relevant handwritten areas.
@@ -32,11 +34,13 @@ cargo build --release
 ## Usage
 
 1. Set your reMarkable tablet's IP address:
+
    ```bash
    export REMARKABLE_IP=192.168.1.xxx
    ```
 
 2. Run the utility:
+
    ```bash
    cargo run --release
    ```
