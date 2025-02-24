@@ -26,9 +26,9 @@ This tool connects to a reMarkable tablet over SSH, captures the current screen 
 ## Installation
 
 ```bash
-git clone https://github.com/yourusername/remarkable-screen-capture.git
-cd remarkable-screen-capture
-cargo build --release
+git clone https://github.com/moonstripe/resnap-rs.git
+cd resnap-rs
+cargo install --path . --root "<~/.local or wherever you keep your scripts>"
 ```
 
 ## Usage
