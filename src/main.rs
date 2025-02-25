@@ -304,15 +304,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Create cropped image
         let cropped = img.crop_imm(min_x, min_y, width, height);
 
-        // Save cropped image
+        // Convert to RGBA to enable transparency
+        let mut rgba_img = RgbaImage::new(width, height);
+
+        // Brightness threshold for transparency - adjust as needed
+        let transparency_threshold = 230;
+
+        // Copy pixels making the brightest ones transparent
+        for (x, y, pixel) in cropped.to_rgba8().enumerate_pixels() {
+            // Calculate brightness (average of RGB values as a simple approach)
+            let brightness = (pixel[0] as u16 + pixel[1] as u16 + pixel[2] as u16) / 3;
+
+            if brightness >= transparency_threshold {
+                // Very bright pixel - make transparent
+                rgba_img.put_pixel(x, y, Rgba([pixel[0], pixel[1], pixel[2], 0]));
+            } else {
+                // Keep original pixel with full opacity
+                rgba_img.put_pixel(x, y, Rgba([pixel[0], pixel[1], pixel[2], 255]));
+            }
+        }
+
+        // Save cropped image with transparency
         let output_stem = Path::new(&formatted_datetime)
             .file_stem()
             .unwrap()
             .to_str()
             .unwrap();
         let cropped_path = output_dir.join(format!("{}_cropped.png", output_stem));
-        cropped.save(&cropped_path)?;
-        log::info!("✅ Saved cropped content to: {}", cropped_path.display());
+        rgba_img.save(&cropped_path)?;
+        log::info!(
+            "✅ Saved cropped content with transparency to: {}",
+            cropped_path.display()
+        );
         println!("{}", cropped_path.display());
     } else {
         log::info!("⚠️ No significant content found in the image");
