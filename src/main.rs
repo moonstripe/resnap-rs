@@ -1,12 +1,41 @@
 use chrono::Utc;
+use clap::Parser;
 use image::{ImageBuffer, Luma, Rgba, RgbaImage};
 use imageproc::contours;
 use openssh::Session;
-use std::{env, fs, fs::File, io::Write, path::Path, process::Command};
+use std::{
+    fs::{self, File},
+    io::Write,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+};
+
+/// A utility to capture and process screenshots from reMarkable tablets
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    /// IP address of the reMarkable tablet
+    #[clap(short = 'I', long = "ip-address", required = true)]
+    ip_address: String,
+
+    /// Directory to save the output files
+    #[clap(short = 'd', long = "directory", default_value = ".")]
+    output_dir: PathBuf,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let remarkable_ip = env::var("REMARKABLE_IP").expect("Could not access REMARKABLE_IP env var.");
+    env_logger::init();
+
+    // Parse command-line arguments
+    let args = Args::parse();
+    let remarkable_ip = args.ip_address;
+    let output_dir = args.output_dir;
+
+    // Ensure output directory exists
+    if !output_dir.exists() {
+        fs::create_dir_all(&output_dir)?;
+    }
 
     let session = Session::connect(
         format!("ssh://root@{}", remarkable_ip),
@@ -14,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
 
-    println!("✅ Connected to reMarkable at {}", remarkable_ip);
+    log::info!("✅ Connected to reMarkable at {}", remarkable_ip);
 
     // Find `xochitl` process ID
     let pid_output = session
@@ -27,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .next()
         .ok_or("Could not find xochitl process ID")?
         .to_string();
-    println!("🆔 Found xochitl PID: {}", pid);
+    log::info!("🆔 Found xochitl PID: {}", pid);
 
     // Find framebuffer memory address
     // First check if this process has the right mapping
@@ -57,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if let Some(p) = found_pid {
-            println!("🔄 Switching to PID {} which has fb0 mapping", p);
+            log::info!("🔄 Switching to PID {} which has fb0 mapping", p);
             pid.clear();
             pid.push_str(&p);
         } else {
@@ -82,9 +111,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .trim()
         .to_string();
     let skip_bytes = u64::from_str_radix(&skip_bytes_hex, 16)? + 7;
-    println!(
+    log::info!(
         "📍 Found framebuffer at address: 0x{} + 7 = {}",
-        skip_bytes_hex, skip_bytes
+        skip_bytes_hex,
+        skip_bytes
     );
 
     // Calculate window size
@@ -94,9 +124,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (bytes_per_pixel, pixel_format, transpose) = (2, "gray16", "transpose=2,hflip"); // 90° clockwise and horizontal flip
 
     let window_bytes = width * height * bytes_per_pixel;
-    println!(
+    log::info!(
         "📏 Window size: {}x{} ({}B per pixel, {} total)",
-        width, height, bytes_per_pixel, window_bytes
+        width,
+        height,
+        bytes_per_pixel,
+        window_bytes
     );
 
     // Create command to extract framebuffer data
@@ -105,7 +138,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         skip_bytes, window_bytes, pid
     );
 
-    println!("📤 Extracting framebuffer data...");
+    log::info!("📤 Extracting framebuffer data...");
     let fb_data = session
         .command("sh")
         .arg("-c")
@@ -113,11 +146,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .output()
         .await?;
 
-    // Save raw data to temp file
-    let temp_file = "remarkable_fb.raw";
-    let mut file = File::create(temp_file)?;
+    // Save raw data to temp file in the output directory
+    let temp_file = output_dir.join("remarkable_fb.raw");
+    let mut file = File::create(&temp_file)?;
     file.write_all(&fb_data.stdout)?;
-    println!("💾 Saved raw framebuffer to {}", temp_file);
+    log::info!("💾 Saved raw framebuffer to {}", temp_file.display());
 
     // Build ffmpeg filter chain
     let mut filters = String::from(transpose);
@@ -126,7 +159,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Convert raw framebuffer to image using ffmpeg
     let now = Utc::now();
     let formatted_datetime = format!("{}-remarkable-screen.png", now.format("%m-%d-%Y-%H-%M-%S"));
-    let output_file = &formatted_datetime;
+    let output_file = output_dir.join(&formatted_datetime);
     let status = Command::new("ffmpeg")
         .args([
             "-f",
@@ -136,23 +169,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "-video_size",
             &format!("{}x{}", width, height),
             "-i",
-            temp_file,
+            &temp_file.to_string_lossy(),
             "-vf",
             &filters,
             "-y",
-            output_file,
+            &output_file.to_string_lossy(),
         ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .status()?;
 
     if status.success() {
-        println!("🖼️ Converted framebuffer to image: {}", output_file);
+        log::info!(
+            "🖼️ Converted framebuffer to image: {}",
+            output_file.display()
+        );
         // Clean up temporary file
-        fs::remove_file(temp_file)?;
+        fs::remove_file(&temp_file)?;
     } else {
         return Err("Failed to convert framebuffer to image".into());
     }
 
-    let img = image::open(output_file)?;
+    let img = image::open(&output_file)?;
 
     // Convert to grayscale if not already
     let gray_img = img.to_luma8();
@@ -234,9 +272,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!(
+    log::info!(
         "Found {} contours, {} significant",
-        found_contours, large_contours
+        found_contours,
+        large_contours
     );
 
     // Add padding to the bounding box
@@ -252,27 +291,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let width = max_x - min_x + 1;
         let height = max_y - min_y + 1;
 
-        println!(
+        log::info!(
             "📏 Content bounding box: ({}, {}) to ({}, {}), size: {}x{}",
-            min_x, min_y, max_x, max_y, width, height
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+            width,
+            height
         );
 
         // Create cropped image
         let cropped = img.crop_imm(min_x, min_y, width, height);
 
         // Save cropped image
-        let output_path = format!(
-            "{}_cropped.png",
-            Path::new(&output_file)
-                .file_stem()
-                .unwrap()
-                .to_str()
-                .unwrap()
-        );
-        cropped.save(&output_path)?;
-        println!("✅ Saved cropped content to: {}", output_path);
+        let output_stem = Path::new(&formatted_datetime)
+            .file_stem()
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let cropped_path = output_dir.join(format!("{}_cropped.png", output_stem));
+        cropped.save(&cropped_path)?;
+        log::info!("✅ Saved cropped content to: {}", cropped_path.display());
+        println!("{}", cropped_path.display());
     } else {
-        println!("⚠️ No significant content found in the image");
+        log::info!("⚠️ No significant content found in the image");
     }
 
     Ok(())

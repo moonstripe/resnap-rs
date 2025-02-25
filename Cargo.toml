@@ -1,11 +1,14 @@
 [package]
 name = "resnap-rs"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [dependencies]
 chrono = "0.4.39"
+clap = { version = "4.5.31", features = ["derive"] }
+env_logger = "0.11.6"
 image = "0.25.5"
 imageproc = "0.25.0"
+log = "0.4.26"
 openssh = "0.11.5"
 tokio = { version = "1.43.0", features = ["full"] }
